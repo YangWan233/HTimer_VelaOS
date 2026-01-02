@@ -1,0 +1,29 @@
+<script>
+export default {
+  globalData: {
+    systemTime: "00:00"
+  },
+
+  onCreate() {
+    console.log("app created");
+    this.updateGlobalTime();
+    this.timer = setInterval(() => {
+      this.updateGlobalTime();
+    }, 1000);
+  },
+
+  updateGlobalTime() {
+    const now = new Date();
+    const h = String(now.getHours()).padStart(2, '0');
+    const m = String(now.getMinutes()).padStart(2, '0');
+    this.globalData.systemTime = `${h}:${m}`;
+  },
+
+  onDestroy() {
+    console.log("app destroyed");
+    if (this.timer) {
+      clearInterval(this.timer);
+    }
+  }
+}
+</script>

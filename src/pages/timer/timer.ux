@@ -1,0 +1,461 @@
+<template>
+  <div class="page">
+    <div class="header">
+      <text class="page-title">计时器</text>
+      <img class="nav-icon back-btn" src="/common/images/back.png" @click="back" />
+      <img class="nav-icon more-btn" src="/common/images/more.png" @click="routerTo('more')" />
+      <text class="system-time">{{ currentTime }}</text>
+    </div>
+
+    <div class="main-content" ontouchstart="handleTouchStart" ontouchend="handleTouchEnd">
+      <div class="timer-box">
+        <div class="timer-row" if="{{ !isShowPreview }}">
+          <text class="timer-text-main {{ timerStatus }}">{{ timeInt }}.</text>
+          <text class="timer-text-small {{ timerStatus }}">{{ timeFraction }}</text>
+        </div>
+        <div class="preview-center-box" if="{{ isShowPreview }}" onclick="hidePreview">
+          <stack class="cube-area">
+            <block for="{{ face in faces }}">
+              <stack class="face" style="left: {{ face.pos.x }}px; top: {{ face.pos.y }}px;">
+                <div
+                  for="{{ dot in face.data }}"
+                  class="dot"
+                  style="left: {{ dot.x }}px; top: {{ dot.y }}px; background-color: {{ colorMap[dot.color] }};"
+                ></div>
+              </stack>
+            </block>
+          </stack>
+        </div>
+        <div class="hint-container">
+          <text class="hint-text">
+            {{ isShowPreview ? "点击屏幕恢复计时" : hintMap[timerStatus] }}
+          </text>
+        </div>
+      </div>
+    </div>
+
+    <div class="scramble-container">
+      <block if="{{ !isShowActions }}">
+        <div
+          class="scramble-click-area {{ hasInteracted ? (isScrambleExiting ? 'menu-pop-out' : 'menu-pop-in') : '' }}"
+          ontouchstart="setPress('scramble', true)"
+          ontouchend="handleScrambleClick"
+          ontouchcancel="setPress('scramble', false)"
+        >
+          <text class="scramble-text">{{ scrambleString }}</text>
+        </div>
+      </block>
+      <block if="{{ isShowActions }}">
+        <div class="action-menu {{ isMenuExiting ? 'menu-pop-out' : 'menu-pop-in' }}">
+          <text
+            class="action-btn {{ isBtn1Pressed ? 'press-active' : '' }}"
+            ontouchstart="setPress('btn1', true)"
+            ontouchend="onAction('refresh')"
+            ontouchcancel="setPress('btn1', false)"
+          >
+            换一条
+          </text>
+          <div class="menu-line"></div>
+          <text
+            class="action-btn {{ isBtn2Pressed ? 'press-active' : '' }}"
+            ontouchstart="setPress('btn2', true)"
+            ontouchend="onAction('preview')"
+            ontouchcancel="setPress('btn2', false)"
+          >
+            预览图
+          </text>
+        </div>
+      </block>
+    </div>
+  </div>
+</template>
+
+<script>
+import CubeCore from "../../utils/cube-core.js"
+import router from "@system.router"
+import brightness from "@system.brightness"
+import app from "@system.app"
+
+export default {
+  private: {
+    currentTime: "00:00",
+    scrambleString: "",
+    timeInt: "0",
+    timeFraction: "000",
+    timerStatus: "idle",
+    startTime: 0,
+    timerInterval: null,
+    timeSyncInterval: null,
+    isShowPreview: false,
+    isShowActions: false,
+    isMenuExiting: false,
+    isScrambleExiting: false,
+    hasInteracted: false,
+    faces: [],
+    isScramblePressed: false,
+    isBtn1Pressed: false,
+    isBtn2Pressed: false,
+    colorMap: {
+      0: "#ffffff",
+      1: "#ffff00",
+      2: "#ffa500",
+      3: "#ff0000",
+      4: "#00ff00",
+      5: "#0000ff",
+      U: "#ffffff",
+      D: "#ffff00",
+      L: "#ffa500",
+      R: "#ff0000",
+      F: "#00ff00",
+      B: "#0000ff"
+    },
+    layout: {
+      U: {x: 64, y: 0},
+      L: {x: 0, y: 64},
+      F: {x: 64, y: 64},
+      R: {x: 128, y: 64},
+      D: {x: 64, y: 128},
+      B: {x: 192, y: 64}
+    },
+    hintMap: {idle: "长按准备", prepping: "继续按住...", ready: "松开开始", running: "点击屏幕停止"}
+  },
+
+  onInit() {
+    this.generateNewScramble()
+    this.updateClock()
+  },
+  onShow() {
+    brightness.setKeepScreenOn({keepScreenOn: true})
+    this.updateClock()
+    this.timeSyncInterval = setInterval(() => this.updateClock(), 1000)
+  },
+  onHide() {
+    brightness.setKeepScreenOn({keepScreenOn: false})
+    clearInterval(this.timeSyncInterval)
+    this.stopTimer()
+  },
+  updateClock() {
+    const now = new Date()
+    this.currentTime = `${now.getHours().toString().padStart(2, "0")}:${now
+      .getMinutes()
+      .toString()
+      .padStart(2, "0")}`
+  },
+  setPress(target, state) {
+    if (target === "scramble") this.isScramblePressed = state
+    if (target === "btn1") this.isBtn1Pressed = state
+    if (target === "btn2") this.isBtn2Pressed = state
+  },
+  handleScrambleClick() {
+    this.setPress("scramble", false)
+    if (this.timerStatus === "idle") {
+      this.hasInteracted = true
+      this.isScrambleExiting = true
+      setTimeout(() => {
+        this.isShowActions = true
+        this.isScrambleExiting = false
+      }, 120)
+    }
+  },
+  onAction(type) {
+    this.isBtn1Pressed = false
+    this.isBtn2Pressed = false
+    this.isMenuExiting = true
+    setTimeout(() => {
+      this.isShowActions = false
+      this.isMenuExiting = false
+      if (type === "refresh") {
+        this.isShowPreview = false
+        this.generateNewScramble()
+      } else if (type === "preview") {
+        setTimeout(() => {
+          this.preparePreviewData()
+          this.isShowPreview = true
+        }, 150)
+      }
+    }, 120)
+  },
+  generateNewScramble() {
+    this.scrambleString = CubeCore.getScramble(20).join(" ")
+  },
+  preparePreviewData() {
+    CubeCore.reset()
+    this.scrambleString.split(" ").forEach((m) => CubeCore.apply(m))
+    const newFaces = []
+    ;["U", "L", "F", "R", "D", "B"].forEach((fName) => {
+      const faceState = CubeCore.state[fName]
+      const dots = faceState.map((color, i) => ({
+        color: color,
+        x: (i % 3) * 20,
+        y: Math.floor(i / 3) * 20
+      }))
+      newFaces.push({name: fName, pos: this.layout[fName], data: dots})
+    })
+    this.faces = newFaces
+  },
+  hidePreview() {
+    this.isShowPreview = false
+  },
+  handleTouchStart() {
+    if (this.isShowPreview) {
+      this.hidePreview()
+      return
+    }
+    if (this.isShowActions) {
+      this.isMenuExiting = true
+      setTimeout(() => {
+        this.isShowActions = false
+        this.isMenuExiting = false
+      }, 120)
+      return
+    }
+    if (this.timerStatus === "running") {
+      this.stopTimer()
+    } else if (this.timerStatus === "idle") {
+      this.timerStatus = "prepping"
+      this.prepTimeout = setTimeout(() => {
+        this.timerStatus = "ready"
+      }, 500)
+    }
+  },
+  handleTouchEnd() {
+    if (this.timerStatus === "ready") {
+      this.startTimer()
+    } else if (this.timerStatus === "prepping") {
+      clearTimeout(this.prepTimeout)
+      this.timerStatus = "idle"
+    }
+  },
+  startTimer() {
+    this.timerStatus = "running"
+    this.startTime = Date.now()
+    this.timerInterval = setInterval(() => {
+      const ms = Date.now() - this.startTime
+      const limit = 100000
+      const formatted = (ms / 1000).toFixed(ms >= limit ? 2 : 3)
+      const parts = formatted.split(".")
+      this.timeInt = parts[0]
+      this.timeFraction = parts[1]
+    }, 40)
+  },
+  stopTimer() {
+    if (this.timerInterval) {
+      clearInterval(this.timerInterval)
+      this.timerInterval = null
+    }
+    if (this.timerStatus === "running") {
+      this.timerStatus = "idle"
+      this.generateNewScramble()
+      this.preparePreviewData()
+      this.hasInteracted = false
+    }
+  },
+  back() {
+    app.terminate()
+  },
+  routerTo(path) {
+    router.push({uri: path})
+  }
+}
+</script>
+
+<style>
+@font-face {
+  font-family: JetBrainsMono;
+  src: url("/common/fonts/JetBrainsMono-Bold.ttf");
+}
+.page {
+  width: 336px;
+  height: 480px;
+  background-color: #000000;
+  flex-direction: column;
+  align-items: center;
+}
+.header {
+  width: 100%;
+  height: 84px;
+  position: relative;
+}
+.system-time {
+  position: absolute;
+  top: 7px;
+  width: 100%;
+  text-align: center;
+  color: #aaaaaa;
+  font-size: 24px;
+  font-weight: bold;
+}
+.page-title {
+  position: absolute;
+  left: 0px;
+  top: 35px;
+  width: 100%;
+  height: 45px;
+  font-size: 32px;
+  font-weight: bold;
+  color: #ffffff;
+  text-align: center;
+}
+.nav-icon {
+  width: 72px;
+  height: 72px;
+  position: absolute;
+  top: 6px;
+}
+.back-btn {
+  left: 6px;
+}
+.more-btn {
+  right: 6px;
+}
+.main-content {
+  flex: 1;
+  width: 100%;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+.timer-box {
+  flex-direction: column;
+  width: 336px;
+  align-items: center;
+}
+.timer-row {
+  flex-direction: row;
+  align-items: flex-end;
+}
+.timer-text-main {
+  font-family: "JetBrainsMono";
+  font-size: 100px;
+  font-weight: bold;
+}
+.timer-text-small {
+  font-family: "JetBrainsMono";
+  font-size: 50px;
+  font-weight: bold;
+  margin-bottom: 12px;
+}
+.idle {
+  color: #ffffff;
+}
+.prepping {
+  color: #ff4444;
+}
+.ready {
+  color: #00ff00;
+}
+.running {
+  color: #ffffff;
+}
+.preview-center-box {
+  width: 100%;
+  justify-content: center;
+}
+.cube-area {
+  width: 252px;
+  height: 188px;
+  position: relative;
+}
+.face {
+  width: 60px;
+  height: 60px;
+  position: absolute;
+}
+.dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  position: absolute;
+  border: 1px solid #000;
+}
+.hint-text {
+  color: #666666;
+  font-size: 24px;
+  text-align: center;
+  margin-top: 10px;
+}
+.scramble-container {
+  width: 310px;
+  height: 120px;
+  background-color: #1a1a1a;
+  border-radius: 30px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+.scramble-click-area,
+.action-menu {
+  width: 100%;
+  height: 100%;
+  justify-content: center;
+  align-items: center;
+  padding: 10px;
+  background-color: #1a1a1a;
+  transform-origin: 155px 60px;
+}
+.scramble-text {
+  color: #ffffff;
+  font-size: 24px;
+  font-weight: bold;
+  text-align: center;
+  lines: 3;
+  line-height: 30px;
+}
+.action-btn {
+  flex: 1;
+  height: 100%;
+  font-size: 28px;
+  font-weight: bold;
+  text-align: center;
+  color: #ffffff;
+}
+.menu-line {
+  width: 2px;
+  height: 40px;
+  background-color: #444444;
+}
+@keyframes menuPopIn {
+  0% {
+    transform: scale(0.1);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+@keyframes menuPopOut {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(0.1);
+    opacity: 0;
+  }
+}
+.menu-pop-in {
+  animation-name: menuPopIn;
+  animation-duration: 150ms;
+  animation-fill-mode: forwards;
+  animation-timing-function: ease-out;
+}
+.menu-pop-out {
+  animation-name: menuPopOut;
+  animation-duration: 120ms;
+  animation-fill-mode: forwards;
+  animation-timing-function: ease-in;
+}
+@keyframes purePress {
+  from {
+    transform: scale(1);
+  }
+  to {
+    transform: scale(0.92);
+  }
+}
+.press-active {
+  animation-name: purePress;
+  animation-duration: 80ms;
+  animation-fill-mode: forwards;
+}
+</style>
