@@ -3,7 +3,7 @@
     <div class="header">
       <text class="page-title">计时器</text>
       <img class="nav-icon back-btn" src="/common/images/back.png" @click="back" />
-      <img class="nav-icon more-btn" src="/common/images/more.png" @click="routerTo('more')" />
+      <img class="nav-icon more-btn" src="/common/images/more.png" @click="more" />
       <text class="system-time">{{ currentTime }}</text>
     </div>
 
@@ -253,8 +253,10 @@ export default {
   back() {
     app.terminate()
   },
-  routerTo(path) {
-    router.push({uri: path})
+  more() {
+    router.push({
+      uri: 'pages/more'
+    })
   }
 }
 </script>

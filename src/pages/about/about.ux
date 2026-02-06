@@ -1,0 +1,111 @@
+<template>
+  <div class="page">
+    <div class="header">
+      <img static src="/common/images/hd.png" class="header-bg" />
+      <text class="system-time">{{ currentTime }}</text>
+      <text class="page-title">关于</text>
+      <img class="nav-icon back-btn" src="/common/images/back.png" @click="back" />
+    </div>
+
+    <text
+      style="
+        position: absolute;
+        left: 26px;
+        top: 144px;
+        width: 204px;
+        height: 48px;
+        font-size: 36px;
+        font-weight: bold;
+        color: rgba(255, 255, 255, 0.6);
+      "
+    >
+      {{ version }}
+    </text>
+  </div>
+</template>
+
+<script>
+import router from "@system.router"
+export default {
+  private: {
+    currentTime: "00:00",
+    timeSyncInterval: null,
+    version: "26.1.0"
+  },
+  onInit() {
+    this.syncGlobalTime()
+  },
+  onShow() {
+    this.syncGlobalTime()
+    this.timeSyncInterval = setInterval(() => this.syncGlobalTime(), 1000)
+  },
+  onHide() {
+    clearInterval(this.timeSyncInterval)
+  },
+  syncGlobalTime() {
+    const globalData = this.$app.$def.globalData
+    if (globalData && globalData.systemTime) {
+      this.currentTime = globalData.systemTime
+    }
+  },
+  back() {
+    router.back()
+  }
+}
+</script>
+
+<style>
+.page {
+  width: 336px;
+  height: 480px;
+  background-color: #000000;
+  background-image: url("../../common/images/about.png");
+}
+
+.header {
+  width: 336px;
+  height: 84px;
+  position: absolute;
+  top: 0px;
+  left: 0px;
+}
+
+.header-bg {
+  position: absolute;
+  width: 336px;
+  height: 102px;
+}
+
+.system-time {
+  position: absolute;
+  top: 7px;
+  width: 100%;
+  text-align: center;
+  color: #aaaaaa;
+  font-size: 24px;
+  font-weight: bold;
+}
+
+.page-title {
+  position: absolute;
+  left: 0px;
+  top: 35px;
+  width: 100%;
+  height: 45px;
+  font-size: 32px;
+  font-weight: bold;
+  color: #ffffff;
+  text-align: center;
+}
+
+.nav-icon {
+  width: 72px;
+  height: 72px;
+  position: absolute;
+  top: 6px;
+}
+
+.back-btn {
+  left: 6px;
+}
+</style>
