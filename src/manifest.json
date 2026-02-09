@@ -1,7 +1,7 @@
 {
   "package": "com.yangwan.htimer",
   "name": "HTimer",
-  "versionName": "26.1.0",
+  "versionName": "26.1.1",
   "versionCode": 1,
   "minPlatformVersion": 1000,
   "icon": "/common/logo.png",
@@ -15,8 +15,11 @@
 	{
 		"name": "system.brightness"
 	},
-  {
+	{
 		"name": "system.app"
+	},
+	{
+		"name": "system.file"
 	}
 ],
   "config": {
@@ -34,6 +37,9 @@
       },
       "pages/more": {
         "component": "more"
+      },
+      "pages/kindSetting": {
+        "component": "kindSetting"
       }
     }
   }

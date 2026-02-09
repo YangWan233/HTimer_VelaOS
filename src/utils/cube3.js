@@ -1,4 +1,6 @@
-// cube-core.js
+/**
+ * CubeCore - 三阶魔方逻辑内核
+ */
 const CubeCore = {
     colorMap: {
         U: "#fff", D: "#ff0",
@@ -6,7 +8,6 @@ const CubeCore = {
         L: "#f80", R: "#f00"
     },
     
-    // 轴向映射：用于高效判断相对面冲突 (0: U/D, 1: L/R, 2: F/B)
     axisMap: { U: 0, D: 0, L: 1, R: 1, F: 2, B: 2 },
     
     state: {},
@@ -19,7 +20,6 @@ const CubeCore = {
 
     rotFace(f) {
         const a = this.state[f];
-        // 保持中心块 a[4] 不变
         this.state[f] = [a[6], a[3], a[0], a[7], a[4], a[1], a[8], a[5], a[2]];
     },
 
@@ -71,10 +71,6 @@ const CubeCore = {
         while (t--) this.move(m[0]);
     },
 
-    /**
-     * 高性能合规打乱算法
-     * 解决了同面连续以及同轴面冲突（如 U D U）
-     */
     getScramble(len = 20) {
         const f = ["U", "D", "L", "R", "F", "B"];
         const m = ["", "'", "2"];
@@ -86,10 +82,8 @@ const CubeCore = {
             let idx = Math.floor(Math.random() * 6);
             let face = f[idx];
 
-            // 1. 过滤同面 (防止 U U)
             if (idx === lastIdx) continue;
 
-            // 2. 过滤同轴相对面冲突 (防止 U D U)
             if (secondLastIdx !== -1) {
                 if (this.axisMap[face] === this.axisMap[f[lastIdx]] && idx === secondLastIdx) {
                     continue;

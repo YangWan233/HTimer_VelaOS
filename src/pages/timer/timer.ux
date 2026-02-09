@@ -13,6 +13,7 @@
           <text class="timer-text-main {{ timerStatus }}">{{ timeInt }}.</text>
           <text class="timer-text-small {{ timerStatus }}">{{ timeFraction }}</text>
         </div>
+
         <div class="preview-center-box" if="{{ isShowPreview }}" onclick="hidePreview">
           <stack class="cube-area">
             <block for="{{ face in faces }}">
@@ -20,12 +21,13 @@
                 <div
                   for="{{ dot in face.data }}"
                   class="dot"
-                  style="left: {{ dot.x }}px; top: {{ dot.y }}px; background-color: {{ colorMap[dot.color] }};"
+                  style="left: {{ dot.x }}px; top: {{ dot.y }}px; width: {{ dot.size }}px; height: {{ dot.size }}px; background-color: {{ colorMap[dot.color] }};"
                 ></div>
               </stack>
             </block>
           </stack>
         </div>
+
         <div class="hint-container">
           <text class="hint-text">
             {{ isShowPreview ? "点击屏幕恢复计时" : hintMap[timerStatus] }}
@@ -71,15 +73,17 @@
 </template>
 
 <script>
-import CubeCore from "../../utils/cube-core.js"
+import Cube2Core from "../../utils/cube2.js"
+import Cube3Core from "../../utils/cube3.js"
 import router from "@system.router"
 import brightness from "@system.brightness"
 import app from "@system.app"
+import file from "@system.file"
 
 export default {
   private: {
     currentTime: "00:00",
-    scrambleString: "",
+    scrambleString: " ",
     timeInt: "0",
     timeFraction: "000",
     timerStatus: "idle",
@@ -92,23 +96,12 @@ export default {
     isScrambleExiting: false,
     hasInteracted: false,
     faces: [],
+    currentType: "3x3", // 默认值
+    CONFIG_PATH: "internal://files/cube_settings.json",
     isScramblePressed: false,
     isBtn1Pressed: false,
     isBtn2Pressed: false,
-    colorMap: {
-      0: "#ffffff",
-      1: "#ffff00",
-      2: "#ffa500",
-      3: "#ff0000",
-      4: "#00ff00",
-      5: "#0000ff",
-      U: "#ffffff",
-      D: "#ffff00",
-      L: "#ffa500",
-      R: "#ff0000",
-      F: "#00ff00",
-      B: "#0000ff"
-    },
+    colorMap: {U: "#ffffff", D: "#ffff00", L: "#ffa500", R: "#ff0000", F: "#00ff00", B: "#0000ff"},
     layout: {
       U: {x: 64, y: 0},
       L: {x: 0, y: 64},
@@ -121,81 +114,98 @@ export default {
   },
 
   onInit() {
-    this.generateNewScramble()
     this.updateClock()
+    // 双保险：页面自己也读一遍文件，确保不被 app.ux 的异步延迟坑到
+    this.loadLocalConfig()
   },
+
   onShow() {
     brightness.setKeepScreenOn({keepScreenOn: true})
     this.updateClock()
     this.timeSyncInterval = setInterval(() => this.updateClock(), 1000)
+    // 每次显示页面（如从切换页返回）时强制同步
+    this.syncFromGlobal()
   },
+
   onHide() {
     brightness.setKeepScreenOn({keepScreenOn: false})
     clearInterval(this.timeSyncInterval)
     this.stopTimer()
   },
-  updateClock() {
-    const now = new Date()
-    this.currentTime = `${now.getHours().toString().padStart(2, "0")}:${now
-      .getMinutes()
-      .toString()
-      .padStart(2, "0")}`
+
+  /**
+   * 核心逻辑：直接读取文件，最优先级
+   */
+  loadLocalConfig() {
+    const self = this
+    file.readText({
+      uri: this.CONFIG_PATH,
+      success: function (data) {
+        try {
+          const config = JSON.parse(data.text)
+          if (config.currentCubeType) {
+            self.currentType = config.currentCubeType
+            // 同步回全局，保持一致
+            if (self.$app.$def.globalData) {
+              self.$app.$def.globalData.currentCubeType = config.currentCubeType
+            }
+            self.generateNewScramble()
+          }
+        } catch (e) {}
+      },
+      fail: function () {
+        // 如果读不到文件，就用全局变量（可能是还没读完，也可能是真的没存过）
+        self.syncFromGlobal()
+        self.generateNewScramble()
+      }
+    })
   },
-  setPress(target, state) {
-    if (target === "scramble") this.isScramblePressed = state
-    if (target === "btn1") this.isBtn1Pressed = state
-    if (target === "btn2") this.isBtn2Pressed = state
-  },
-  handleScrambleClick() {
-    this.setPress("scramble", false)
-    if (this.timerStatus === "idle") {
-      this.hasInteracted = true
-      this.isScrambleExiting = true
-      setTimeout(() => {
-        this.isShowActions = true
-        this.isScrambleExiting = false
-      }, 120)
+
+  syncFromGlobal() {
+    const globalData = this.$app.$def.globalData
+    if (globalData && globalData.currentCubeType) {
+      if (this.currentType !== globalData.currentCubeType) {
+        this.currentType = globalData.currentCubeType
+        this.generateNewScramble()
+      }
     }
   },
-  onAction(type) {
-    this.isBtn1Pressed = false
-    this.isBtn2Pressed = false
-    this.isMenuExiting = true
-    setTimeout(() => {
-      this.isShowActions = false
-      this.isMenuExiting = false
-      if (type === "refresh") {
-        this.isShowPreview = false
-        this.generateNewScramble()
-      } else if (type === "preview") {
-        setTimeout(() => {
-          this.preparePreviewData()
-          this.isShowPreview = true
-        }, 150)
-      }
-    }, 120)
-  },
+
   generateNewScramble() {
-    this.scrambleString = CubeCore.getScramble(20).join(" ")
+    if (this.currentType === "2x2") {
+      this.scrambleString = Cube2Core.getScramble(11).join(" ")
+    } else {
+      this.scrambleString = Cube3Core.getScramble(20).join(" ")
+    }
+    if (this.isShowPreview) this.preparePreviewData()
   },
+
   preparePreviewData() {
-    CubeCore.reset()
-    this.scrambleString.split(" ").forEach((m) => CubeCore.apply(m))
+    const is2x2 = this.currentType === "2x2"
+    const core = is2x2 ? Cube2Core : Cube3Core
+    const size = is2x2 ? 2 : 3
+    const dotSize = is2x2 ? 28 : 18
+    const dotStep = is2x2 ? 30 : 20
+
+    core.reset()
+    if (this.scrambleString && this.scrambleString !== " ") {
+      this.scrambleString.split(" ").forEach((m) => core.apply(m))
+    }
+
     const newFaces = []
     ;["U", "L", "F", "R", "D", "B"].forEach((fName) => {
-      const faceState = CubeCore.state[fName]
+      const faceState = core.state[fName]
       const dots = faceState.map((color, i) => ({
         color: color,
-        x: (i % 3) * 20,
-        y: Math.floor(i / 3) * 20
+        x: (i % size) * dotStep,
+        y: Math.floor(i / size) * dotStep,
+        size: dotSize
       }))
       newFaces.push({name: fName, pos: this.layout[fName], data: dots})
     })
     this.faces = newFaces
   },
-  hidePreview() {
-    this.isShowPreview = false
-  },
+
   handleTouchStart() {
     if (this.isShowPreview) {
       this.hidePreview()
@@ -218,6 +228,7 @@ export default {
       }, 500)
     }
   },
+
   handleTouchEnd() {
     if (this.timerStatus === "ready") {
       this.startTimer()
@@ -226,18 +237,19 @@ export default {
       this.timerStatus = "idle"
     }
   },
+
   startTimer() {
     this.timerStatus = "running"
     this.startTime = Date.now()
     this.timerInterval = setInterval(() => {
       const ms = Date.now() - this.startTime
-      const limit = 100000
-      const formatted = (ms / 1000).toFixed(ms >= limit ? 2 : 3)
+      const formatted = (ms / 1000).toFixed(ms >= 100000 ? 2 : 3)
       const parts = formatted.split(".")
       this.timeInt = parts[0]
       this.timeFraction = parts[1]
     }, 40)
   },
+
   stopTimer() {
     if (this.timerInterval) {
       clearInterval(this.timerInterval)
@@ -246,22 +258,68 @@ export default {
     if (this.timerStatus === "running") {
       this.timerStatus = "idle"
       this.generateNewScramble()
-      this.preparePreviewData()
       this.hasInteracted = false
     }
+  },
+
+  setPress(target, state) {
+    if (target === "scramble") this.isScramblePressed = state
+    if (target === "btn1") this.isBtn1Pressed = state
+    if (target === "btn2") this.isBtn2Pressed = state
+  },
+
+  handleScrambleClick() {
+    this.setPress("scramble", false)
+    if (this.timerStatus === "idle") {
+      this.hasInteracted = true
+      this.isScrambleExiting = true
+      setTimeout(() => {
+        this.isShowActions = true
+        this.isScrambleExiting = false
+      }, 120)
+    }
+  },
+
+  onAction(type) {
+    this.isBtn1Pressed = false
+    this.isBtn2Pressed = false
+    this.isMenuExiting = true
+    setTimeout(() => {
+      this.isShowActions = false
+      this.isMenuExiting = false
+      if (type === "refresh") {
+        this.isShowPreview = false
+        this.generateNewScramble()
+      } else if (type === "preview") {
+        setTimeout(() => {
+          this.preparePreviewData()
+          this.isShowPreview = true
+        }, 150)
+      }
+    }, 120)
+  },
+
+  hidePreview() {
+    this.isShowPreview = false
+  },
+  updateClock() {
+    const now = new Date()
+    this.currentTime = `${now.getHours().toString().padStart(2, "0")}:${now
+      .getMinutes()
+      .toString()
+      .padStart(2, "0")}`
   },
   back() {
     app.terminate()
   },
   more() {
-    router.push({
-      uri: 'pages/more'
-    })
+    router.push({uri: "pages/more"})
   }
 }
 </script>
 
 <style>
+/* 保持原有样式 */
 @font-face {
   font-family: JetBrainsMono;
   src: url("/common/fonts/JetBrainsMono-Bold.ttf");
@@ -364,8 +422,6 @@ export default {
   position: absolute;
 }
 .dot {
-  width: 18px;
-  height: 18px;
   border-radius: 4px;
   position: absolute;
   border: 1px solid #000;
@@ -415,6 +471,24 @@ export default {
   height: 40px;
   background-color: #444444;
 }
+.menu-pop-in {
+  animation-name: menuPopIn;
+  animation-duration: 150ms;
+  animation-fill-mode: forwards;
+  animation-timing-function: ease-out;
+}
+.menu-pop-out {
+  animation-name: menuPopOut;
+  animation-duration: 120ms;
+  animation-fill-mode: forwards;
+  animation-timing-function: ease-in;
+}
+.press-active {
+  animation-name: purePress;
+  animation-duration: 80ms;
+  animation-fill-mode: forwards;
+}
+
 @keyframes menuPopIn {
   0% {
     transform: scale(0.1);
@@ -435,18 +509,6 @@ export default {
     opacity: 0;
   }
 }
-.menu-pop-in {
-  animation-name: menuPopIn;
-  animation-duration: 150ms;
-  animation-fill-mode: forwards;
-  animation-timing-function: ease-out;
-}
-.menu-pop-out {
-  animation-name: menuPopOut;
-  animation-duration: 120ms;
-  animation-fill-mode: forwards;
-  animation-timing-function: ease-in;
-}
 @keyframes purePress {
   from {
     transform: scale(1);
@@ -454,10 +516,5 @@ export default {
   to {
     transform: scale(0.92);
   }
-}
-.press-active {
-  animation-name: purePress;
-  animation-duration: 80ms;
-  animation-fill-mode: forwards;
 }
 </style>

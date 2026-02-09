@@ -1,28 +1,54 @@
 <script>
+import file from "@system.file"
+
 export default {
   globalData: {
-    systemTime: "00:00"
+    systemTime: "00:00",
+    currentCubeType: "3x3" // 默认值
   },
 
   onCreate() {
-    console.log("app created");
-    this.updateGlobalTime();
+    console.log("app created")
+    // 应用启动时立即加载本地配置
+    this.loadPersistedConfig()
+
+    this.updateGlobalTime()
     this.timer = setInterval(() => {
-      this.updateGlobalTime();
-    }, 1000);
+      this.updateGlobalTime()
+    }, 1000)
+  },
+
+  loadPersistedConfig() {
+    const self = this
+    file.readText({
+      uri: "internal://files/cube_settings.json",
+      success: function (data) {
+        try {
+          const config = JSON.parse(data.text)
+          if (config.currentCubeType) {
+            self.globalData.currentCubeType = config.currentCubeType
+            console.log("全局配置读取成功:", config.currentCubeType)
+          }
+        } catch (e) {
+          console.error("全局配置解析失败")
+        }
+      },
+      fail: function (data, code) {
+        console.log("尚无本地配置，使用默认值")
+      }
+    })
   },
 
   updateGlobalTime() {
-    const now = new Date();
-    const h = String(now.getHours()).padStart(2, '0');
-    const m = String(now.getMinutes()).padStart(2, '0');
-    this.globalData.systemTime = `${h}:${m}`;
+    const now = new Date()
+    const h = String(now.getHours()).padStart(2, "0")
+    const m = String(now.getMinutes()).padStart(2, "0")
+    this.globalData.systemTime = `${h}:${m}`
   },
 
   onDestroy() {
-    console.log("app destroyed");
     if (this.timer) {
-      clearInterval(this.timer);
+      clearInterval(this.timer)
     }
   }
 }
