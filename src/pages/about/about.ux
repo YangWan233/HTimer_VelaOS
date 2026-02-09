@@ -30,7 +30,7 @@ export default {
   private: {
     currentTime: "00:00",
     timeSyncInterval: null,
-    version: "26.1.0"
+    version: "26.1.1"
   },
   onInit() {
     this.syncGlobalTime()
