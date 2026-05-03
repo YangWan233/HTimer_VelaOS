@@ -1,6 +1,13 @@
 <script>
 import file from "@system.file"
 
+const SETTINGS_PATH = "internal://files/cube_settings.json"
+const SCORES_PATH = "internal://files/cube_scores.json"
+const EMPTY_SCORES = {
+  bestTimes: {"2x2": null, "3x3": null},
+  scoreRecords: {"2x2": [], "3x3": []}
+}
+
 export default {
   globalData: {
     systemTime: "00:00",
@@ -14,8 +21,13 @@ export default {
 
   onCreate() {
     console.log("app created")
-    this.resetScores()
-    this.loadPersistedConfig()
+
+    // ✅ 每次进入清空内存成绩
+    this.globalData.bestTimes = {"2x2": null, "3x3": null}
+    this.globalData.scoreRecords = {"2x2": [], "3x3": []}
+
+    // ✅ 覆盖本地成绩文件
+    this.clearPersistedScores()
 
     this.updateGlobalTime()
     this.timer = setInterval(() => {
@@ -24,14 +36,13 @@ export default {
   },
 
   onShow() {
-    this.resetScores()
-    this.clearPersistedScores()
+    this.updateGlobalTime()
   },
 
   loadPersistedConfig() {
     const self = this
     file.readText({
-      uri: "internal://files/cube_settings.json",
+      uri: SETTINGS_PATH,
       success: function (data) {
         try {
           const config = JSON.parse(data.text)
@@ -42,14 +53,6 @@ export default {
           if (typeof config.inspection !== "undefined") {
             self.globalData.inspection = config.inspection
           }
-
-          self.resetScores()
-          config.bestTimes = self.globalData.bestTimes
-          config.scoreRecords = self.globalData.scoreRecords
-          file.writeText({
-            uri: "internal://files/cube_settings.json",
-            text: JSON.stringify(config)
-          })
 
           console.log("全局配置读取成功:", config)
         } catch (e) {
@@ -68,22 +71,9 @@ export default {
   },
 
   clearPersistedScores() {
-    const self = this
-    file.readText({
-      uri: "internal://files/cube_settings.json",
-      success: function (data) {
-        let config = {}
-        try {
-          config = JSON.parse(data.text)
-        } catch (e) {}
-
-        config.bestTimes = self.globalData.bestTimes
-        config.scoreRecords = self.globalData.scoreRecords
-        file.writeText({
-          uri: "internal://files/cube_settings.json",
-          text: JSON.stringify(config)
-        })
-      }
+    file.writeText({
+      uri: SCORES_PATH,
+      text: JSON.stringify(EMPTY_SCORES)
     })
   },
 

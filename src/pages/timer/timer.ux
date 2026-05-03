@@ -14,8 +14,13 @@
     <div class="main-content" ontouchstart="handleTouchStart" ontouchend="handleTouchEnd">
       <div class="timer-box">
         <div class="timer-row" if="{{ !isShowPreview }}">
-          <text class="timer-text-main {{ timerStatus }}">{{ timeInt }}.</text>
-          <text class="timer-text-small {{ timerStatus }}">{{ timeFraction }}</text>
+          <block if="{{ timeInt === 'DNF' }}">
+            <text class="timer-text-main {{ timerStatus }}">DNF</text>
+          </block>
+          <block else>
+            <text class="timer-text-main {{ timerStatus }}">{{ timeInt }}.</text>
+            <text class="timer-text-small {{ timerStatus }}">{{ timeFraction }}</text>
+          </block>
         </div>
 
         <div class="preview-center-box" if="{{ isShowPreview }}" onclick="hidePreview">
@@ -108,6 +113,7 @@ export default {
     faces: [],
     currentType: "3x3",
     CONFIG_PATH: "internal://files/cube_settings.json",
+    SCORES_PATH: "internal://files/cube_scores.json",
     bestTimes: {"2x2": null, "3x3": null},
     scoreRecords: {"2x2": [], "3x3": []},
     isScramblePressed: false,
@@ -117,6 +123,8 @@ export default {
     inspectionEnabled: true,
     isInspecting: false,
     inspectionTime: 15,
+    inspectionStartTime: 0,
+    inspectionEndTime: 0,
     inspectionTimer: null,
     overtime: 0,
     overtimeTimer: null,
@@ -133,10 +141,17 @@ export default {
       D: {x: 64, y: 128},
       B: {x: 192, y: 64}
     },
-    hintMap: {idle: "长按准备", prepping: "继续按住...", ready: "松开开始", running: "点击屏幕停止"}
+    hintMap: {
+      idle: "长按准备",
+      prepping: "继续按住...",
+      ready: "松开开始",
+      overtime: "超时",
+      running: "点击屏幕停止"
+    }
   },
 
   onInit() {
+    this.clearAllScores()
     this.updateClock()
     this.loadLocalConfig()
   },
@@ -168,6 +183,32 @@ export default {
     appDef.onInspectionChanged = null
   },
 
+  clearAllScores() {
+    const globalData = this.$app.$def.globalData
+
+    // ✅ 1. 清空内存
+    if (globalData) {
+      globalData.bestTimes = {"2x2": null, "3x3": null}
+      globalData.scoreRecords = {"2x2": [], "3x3": []}
+    }
+
+    // ✅ 2. 清空本地成绩文件
+    const file = require("@system.file")
+    file.writeText({
+      uri: this.SCORES_PATH,
+      text: JSON.stringify({
+        bestTimes: {"2x2": null, "3x3": null},
+        scoreRecords: {"2x2": [], "3x3": []}
+      }),
+      success: () => {
+        console.log("成绩已清空（本地+全局）")
+      },
+      fail: () => {
+        console.error("清空成绩文件失败")
+      }
+    })
+  },
+
   handleGlobalTouchStart() {
     if (this.timerStatus === "running") {
       this.stopTimer()
@@ -194,6 +235,7 @@ export default {
 
   loadLocalConfig() {
     const self = this
+    // 读取配置
     file.readText({
       uri: this.CONFIG_PATH,
       success: function (data) {
@@ -208,12 +250,36 @@ export default {
           }
           if (typeof config.inspection !== "undefined") {
             self.inspectionEnabled = config.inspection
+            if (self.$app.$def.globalData) {
+              self.$app.$def.globalData.inspection = config.inspection
+            }
           }
         } catch (e) {}
       },
       fail: function () {
         self.syncFromGlobal()
         self.generateNewScramble()
+      }
+    })
+    // 读取成绩（应用启动时已清空，此处仅做同步）
+    file.readText({
+      uri: this.SCORES_PATH,
+      success: function (data) {
+        try {
+          const scores = JSON.parse(data.text)
+          if (scores.bestTimes) {
+            self.bestTimes = Object.assign({"2x2": null, "3x3": null}, scores.bestTimes)
+            if (self.$app.$def.globalData) {
+              self.$app.$def.globalData.bestTimes = self.bestTimes
+            }
+          }
+          if (scores.scoreRecords) {
+            self.scoreRecords = Object.assign({"2x2": [], "3x3": []}, scores.scoreRecords)
+            if (self.$app.$def.globalData) {
+              self.$app.$def.globalData.scoreRecords = self.scoreRecords
+            }
+          }
+        } catch (e) {}
       }
     })
   },
@@ -265,6 +331,11 @@ export default {
     if (this.timerStatus === "running") {
       this.stopTimer()
     } else if (this.timerStatus === "idle") {
+      this.penalty = 0
+      this.isDNF = false
+      this.penaltyText = ""
+      this.inspectionStartTime = 0
+      this.inspectionEndTime = 0
       this.timerStatus = "prepping"
 
       this.prepTimeout = setTimeout(() => {
@@ -295,6 +366,8 @@ export default {
   startInspection() {
     this.isInspecting = true
     this.inspectionTime = 15
+    this.inspectionStartTime = Date.now()
+    this.inspectionEndTime = 0
     this.penalty = 0
     this.isDNF = false
     this.penaltyText = ""
@@ -302,16 +375,20 @@ export default {
     this.inspectionTimer = setInterval(() => {
       this.inspectionTime--
 
-      this.timeInt = this.inspectionTime
+      this.timeInt = Math.abs(this.inspectionTime)
       this.timeFraction = "00"
+      this.updateInspectionPenalty()
 
       if (this.inspectionTime <= 0) {
+        this.timerStatus = "overtime"
         this.startOvertime()
       }
     }, 1000)
   },
 
   stopInspection() {
+    this.inspectionEndTime = Date.now()
+    this.updateInspectionPenalty(this.inspectionEndTime)
     clearInterval(this.inspectionTimer)
     this.inspectionTimer = null
     this.isInspecting = false
@@ -328,16 +405,25 @@ export default {
     this.overtime = 0
 
     this.overtimeTimer = setInterval(() => {
-      this.overtime++
-
-      if (this.overtime >= 1) {
-        this.penalty = 2
-      }
-
-      if (this.overtime >= 8) {
-        this.isDNF = true
-      }
+      this.updateInspectionPenalty()
     }, 1000)
+  },
+
+  updateInspectionPenalty(now) {
+    if (!this.inspectionStartTime) return
+
+    const current = now || Date.now()
+    const overtimeSeconds = Math.floor((current - this.inspectionStartTime - 15000) / 1000)
+
+    // ✅ 超过15秒 → +2
+    if (overtimeSeconds >= 0) {
+      this.penalty = 2
+    }
+
+    // ✅ 超过17秒 → DNF
+    if (overtimeSeconds >= 2) {
+      this.isDNF = true
+    }
   },
 
   startTimer() {
@@ -359,23 +445,34 @@ export default {
     if (this.timerStatus === "running") {
       const elapsed = Date.now() - this.startTime
 
+      // 更新判罚（防止 inspection 松手瞬间误差）
+      if (this.inspectionEndTime) {
+        this.updateInspectionPenalty(this.inspectionEndTime)
+      }
+
+      let finalTime = elapsed
+
       if (this.isDNF) {
+        // ❌ DNF
         this.timeInt = "DNF"
         this.timeFraction = ""
-      } else {
-        const resultMs = elapsed + this.penalty * 1000
-        this.showElapsedTime(resultMs)
 
+        this.recordScore("DNF")
+      } else {
+        // ✅ +2 判罚
         if (this.penalty === 2) {
+          finalTime += 2000
           this.penaltyText = "+2s"
         }
 
-        this.recordScore(resultMs)
-        this.updateBestTime(resultMs)
-        this.saveConfigMerge({
-          bestTimes: this.bestTimes,
-          scoreRecords: this.scoreRecords
-        })
+        // ✅ 显示最终时间
+        this.showElapsedTime(finalTime)
+
+        // ✅ 存储最终成绩（已处理+2）
+        this.recordScore(finalTime)
+        this.updateBestTime(finalTime)
+
+        this.saveScores()
       }
 
       this.timerStatus = "idle"
@@ -392,8 +489,11 @@ export default {
   },
 
   updateBestTime(resultMs) {
+    if (typeof resultMs !== "number") return // ❗过滤 DNF
+
     const cubeType = this.currentType === "2x2" ? "2x2" : "3x3"
     const currentBest = this.bestTimes && this.bestTimes[cubeType]
+
     if (typeof currentBest === "number" && resultMs >= currentBest) return
 
     const nextBestTimes = Object.assign({"2x2": null, "3x3": null}, this.bestTimes)
@@ -409,21 +509,23 @@ export default {
       message: "新最佳！",
       duration: 2000
     })
-
   },
 
-  recordScore(resultMs) {
+  recordScore(result) {
     const cubeType = this.currentType === "2x2" ? "2x2" : "3x3"
+
     const nextRecords = Object.assign({"2x2": [], "3x3": []}, this.scoreRecords)
     const currentRecords = nextRecords[cubeType] || []
-    nextRecords[cubeType] = currentRecords.concat([resultMs])
+
+    // result 可以是 number 或 "DNF"
+    nextRecords[cubeType] = currentRecords.concat([result])
+
     this.scoreRecords = nextRecords
 
     const globalData = this.$app.$def.globalData
     if (globalData) {
       globalData.scoreRecords = nextRecords
     }
-
   },
 
   saveConfigMerge(newData) {
@@ -449,6 +551,17 @@ export default {
           text: JSON.stringify(newData)
         })
       }
+    })
+  },
+
+  saveScores() {
+    const self = this
+    file.writeText({
+      uri: this.SCORES_PATH,
+      text: JSON.stringify({
+        bestTimes: this.bestTimes,
+        scoreRecords: this.scoreRecords
+      })
     })
   },
 
@@ -604,6 +717,9 @@ export default {
 }
 .ready {
   color: #00ff00;
+}
+.overtime {
+  color: #ff4444;
 }
 .running {
   color: #ffffff;

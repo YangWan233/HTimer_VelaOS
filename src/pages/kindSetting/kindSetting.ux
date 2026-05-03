@@ -76,12 +76,33 @@ export default {
       globalData.currentCubeType = id
     }
 
-    const saveObj = {currentCubeType: id}
-    file.writeText({
+    this.saveConfigMerge({
+      currentCubeType: id
+    })
+  },
+
+  saveConfigMerge(newData) {
+    const self = this
+
+    file.readText({
       uri: this.CONFIG_PATH,
-      text: JSON.stringify(saveObj),
-      success: () => {
-        console.log("魔方类型已永久保存:", id)
+      success(data) {
+        let oldConfig = {}
+        try {
+          oldConfig = JSON.parse(data.text)
+        } catch (e) {}
+
+        const merged = Object.assign({}, oldConfig, newData)
+        file.writeText({
+          uri: self.CONFIG_PATH,
+          text: JSON.stringify(merged)
+        })
+      },
+      fail() {
+        file.writeText({
+          uri: self.CONFIG_PATH,
+          text: JSON.stringify(newData)
+        })
       }
     })
   },
