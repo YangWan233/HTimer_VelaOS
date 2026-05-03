@@ -1,0 +1,240 @@
+<template>
+  <div class="page">
+    <div class="header">
+      <img src="/common/images/hd.png" class="header-bg" />
+      <text class="system-time">{{ currentTime }}</text>
+      <text class="page-title">成绩详情</text>
+      <img class="nav-icon back-btn" src="/common/images/back.png" @click="back" />
+    </div>
+
+    <div class="score-list">
+      <div class="score-card">
+        <div class="card-header">
+          <text class="cube-title">二阶魔方</text>
+          <text class="cube-desc">{{ twoCount }} 次成绩</text>
+        </div>
+        <div class="score-row">
+          <text class="score-label">最佳</text>
+          <text class="score-value">{{ twoBest }}</text>
+        </div>
+        <div class="score-row">
+          <text class="score-label">Ao5</text>
+          <text class="score-value">{{ twoAo5 }}</text>
+        </div>
+        <div class="score-row">
+          <text class="score-label">Ao12</text>
+          <text class="score-value">{{ twoAo12 }}</text>
+        </div>
+      </div>
+
+      <div class="score-card">
+        <div class="card-header">
+          <text class="cube-title">三阶魔方</text>
+          <text class="cube-desc">{{ threeCount }} 次成绩</text>
+        </div>
+        <div class="score-row">
+          <text class="score-label">最佳</text>
+          <text class="score-value">{{ threeBest }}</text>
+        </div>
+        <div class="score-row">
+          <text class="score-label">Ao5</text>
+          <text class="score-value">{{ threeAo5 }}</text>
+        </div>
+        <div class="score-row">
+          <text class="score-label">Ao12</text>
+          <text class="score-value">{{ threeAo12 }}</text>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script>
+import router from "@system.router"
+
+export default {
+  private: {
+    currentTime: "00:00",
+    timeSyncInterval: null,
+    twoBest: "--",
+    twoAo5: "--",
+    twoAo12: "--",
+    twoCount: 0,
+    threeBest: "--",
+    threeAo5: "--",
+    threeAo12: "--",
+    threeCount: 0
+  },
+
+  onInit() {
+    this.syncData()
+  },
+
+  onShow() {
+    this.syncData()
+    this.timeSyncInterval = setInterval(() => this.syncGlobalTime(), 1000)
+  },
+
+  onHide() {
+    clearInterval(this.timeSyncInterval)
+  },
+
+  syncData() {
+    this.syncGlobalTime()
+
+    const globalData = this.$app.$def.globalData || {}
+    const bestTimes = globalData.bestTimes || {"2x2": null, "3x3": null}
+    const records = globalData.scoreRecords || {"2x2": [], "3x3": []}
+
+    const twoRecords = records["2x2"] || []
+    const threeRecords = records["3x3"] || []
+
+    this.twoCount = twoRecords.length
+    this.threeCount = threeRecords.length
+    this.twoBest = this.formatTime(bestTimes["2x2"])
+    this.threeBest = this.formatTime(bestTimes["3x3"])
+    this.twoAo5 = this.formatAverage(twoRecords, 5)
+    this.threeAo5 = this.formatAverage(threeRecords, 5)
+    this.twoAo12 = this.formatAverage(twoRecords, 12)
+    this.threeAo12 = this.formatAverage(threeRecords, 12)
+  },
+
+  syncGlobalTime() {
+    const globalData = this.$app.$def.globalData
+    if (globalData && globalData.systemTime) {
+      this.currentTime = globalData.systemTime
+    }
+  },
+
+  formatAverage(records, size) {
+    if (!records || records.length < size) return "--"
+
+    const latest = records.slice(records.length - size)
+    const sorted = latest.slice().sort((a, b) => a - b)
+    const valid = sorted.slice(1, sorted.length - 1)
+    const total = valid.reduce((sum, item) => sum + item, 0)
+    return this.formatTime(total / valid.length)
+  },
+
+  formatTime(ms) {
+    if (typeof ms !== "number") return "--"
+
+    const seconds = ms / 1000
+    return seconds.toFixed(ms >= 100000 ? 2 : 3)
+  },
+
+  back() {
+    router.back()
+  }
+}
+</script>
+
+<style>
+.page {
+  width: 336px;
+  height: 480px;
+  background-color: #000000;
+  flex-direction: column;
+}
+
+.header {
+  width: 100%;
+  height: 102px;
+  position: relative;
+}
+
+.header-bg {
+  position: absolute;
+  width: 100%;
+  height: 102px;
+}
+
+.system-time {
+  position: absolute;
+  top: 7px;
+  width: 100%;
+  text-align: center;
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.page-title {
+  position: absolute;
+  left: 0px;
+  top: 35px;
+  width: 100%;
+  height: 45px;
+  font-size: 32px;
+  font-weight: bold;
+  color: #ffffff;
+  text-align: center;
+}
+
+.nav-icon {
+  width: 72px;
+  height: 72px;
+  position: absolute;
+  top: 6px;
+}
+
+.back-btn {
+  left: 6px;
+}
+
+.score-list {
+  margin-top: -16px;
+  padding: 0 6px;
+  flex-direction: column;
+  align-items: center;
+}
+
+.score-card {
+  width: 100%;
+  height: 174px;
+  border-radius: 36px;
+  margin-bottom: 8px;
+  padding: 14px 19px;
+  background-color: rgba(38, 38, 38, 1);
+  border: 3px solid rgba(255, 255, 255, 0.03);
+  flex-direction: column;
+}
+
+.card-header {
+  width: 100%;
+  height: 42px;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.cube-title {
+  font-size: 30px;
+  font-weight: bold;
+  color: #ffffff;
+}
+
+.cube-desc {
+  font-size: 22px;
+  font-weight: bold;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.score-row {
+  width: 100%;
+  height: 34px;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.score-label {
+  font-size: 24px;
+  font-weight: bold;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.score-value {
+  font-size: 28px;
+  font-weight: bold;
+  color: #ffffff;
+}
+</style>

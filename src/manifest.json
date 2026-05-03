@@ -1,7 +1,7 @@
 {
   "package": "com.yangwan.htimer",
   "name": "HTimer",
-  "versionName": "26.1.1",
+  "versionName": "26.2.0",
   "versionCode": 1,
   "minPlatformVersion": 1000,
   "icon": "/common/logo.png",
@@ -20,6 +20,9 @@
 	},
 	{
 		"name": "system.file"
+	},
+	{
+		"name": "system.prompt"
 	}
 ],
   "config": {
@@ -40,6 +43,12 @@
       },
       "pages/kindSetting": {
         "component": "kindSetting"
+      },
+      "pages/timerSetting": {
+        "component": "timerSetting"
+      },
+      "pages/scoreDetail": {
+        "component": "scoreDetail"
       }
     }
   }

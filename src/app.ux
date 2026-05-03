@@ -4,18 +4,28 @@ import file from "@system.file"
 export default {
   globalData: {
     systemTime: "00:00",
-    currentCubeType: "3x3" // 默认值
+    currentCubeType: "3x3",
+    inspection: false,
+    bestTimes: {"2x2": null, "3x3": null},
+    scoreRecords: {"2x2": [], "3x3": []}
   },
+
+  onInspectionChanged: null,
 
   onCreate() {
     console.log("app created")
-    // 应用启动时立即加载本地配置
+    this.resetScores()
     this.loadPersistedConfig()
 
     this.updateGlobalTime()
     this.timer = setInterval(() => {
       this.updateGlobalTime()
     }, 1000)
+  },
+
+  onShow() {
+    this.resetScores()
+    this.clearPersistedScores()
   },
 
   loadPersistedConfig() {
@@ -25,16 +35,54 @@ export default {
       success: function (data) {
         try {
           const config = JSON.parse(data.text)
+
           if (config.currentCubeType) {
             self.globalData.currentCubeType = config.currentCubeType
-            console.log("全局配置读取成功:", config.currentCubeType)
           }
+          if (typeof config.inspection !== "undefined") {
+            self.globalData.inspection = config.inspection
+          }
+
+          self.resetScores()
+          config.bestTimes = self.globalData.bestTimes
+          config.scoreRecords = self.globalData.scoreRecords
+          file.writeText({
+            uri: "internal://files/cube_settings.json",
+            text: JSON.stringify(config)
+          })
+
+          console.log("全局配置读取成功:", config)
         } catch (e) {
           console.error("全局配置解析失败")
         }
       },
-      fail: function (data, code) {
+      fail: function () {
         console.log("尚无本地配置，使用默认值")
+      }
+    })
+  },
+
+  resetScores() {
+    this.globalData.bestTimes = {"2x2": null, "3x3": null}
+    this.globalData.scoreRecords = {"2x2": [], "3x3": []}
+  },
+
+  clearPersistedScores() {
+    const self = this
+    file.readText({
+      uri: "internal://files/cube_settings.json",
+      success: function (data) {
+        let config = {}
+        try {
+          config = JSON.parse(data.text)
+        } catch (e) {}
+
+        config.bestTimes = self.globalData.bestTimes
+        config.scoreRecords = self.globalData.scoreRecords
+        file.writeText({
+          uri: "internal://files/cube_settings.json",
+          text: JSON.stringify(config)
+        })
       }
     })
   },

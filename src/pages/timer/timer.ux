@@ -1,11 +1,15 @@
 <template>
-  <div class="page">
+  <div class="page" ontouchstart="handleGlobalTouchStart">
     <div class="header">
       <text class="page-title">计时器</text>
       <img class="nav-icon back-btn" src="/common/images/back.png" @click="back" />
       <img class="nav-icon more-btn" src="/common/images/more.png" @click="more" />
       <text class="system-time">{{ currentTime }}</text>
     </div>
+
+    <text style="color: #ffaa00; font-size: 20px" if="{{ penaltyText !== '' }}">
+      {{ penaltyText }}
+    </text>
 
     <div class="main-content" ontouchstart="handleTouchStart" ontouchend="handleTouchEnd">
       <div class="timer-box">
@@ -69,6 +73,11 @@
         </div>
       </block>
     </div>
+    <div
+      class="touch-blocker"
+      if="{{ timerStatus === 'running' }}"
+      ontouchstart="handleBlockTouch"
+    ></div>
   </div>
 </template>
 
@@ -79,6 +88,7 @@ import router from "@system.router"
 import brightness from "@system.brightness"
 import app from "@system.app"
 import file from "@system.file"
+import prompt from "@system.prompt"
 
 export default {
   private: {
@@ -96,11 +106,24 @@ export default {
     isScrambleExiting: false,
     hasInteracted: false,
     faces: [],
-    currentType: "3x3", // 默认值
+    currentType: "3x3",
     CONFIG_PATH: "internal://files/cube_settings.json",
+    bestTimes: {"2x2": null, "3x3": null},
+    scoreRecords: {"2x2": [], "3x3": []},
     isScramblePressed: false,
     isBtn1Pressed: false,
     isBtn2Pressed: false,
+
+    inspectionEnabled: true,
+    isInspecting: false,
+    inspectionTime: 15,
+    inspectionTimer: null,
+    overtime: 0,
+    overtimeTimer: null,
+    penalty: 0,
+    isDNF: false,
+    penaltyText: "",
+
     colorMap: {U: "#ffffff", D: "#ffff00", L: "#ffa500", R: "#ff0000", F: "#00ff00", B: "#0000ff"},
     layout: {
       U: {x: 64, y: 0},
@@ -115,7 +138,6 @@ export default {
 
   onInit() {
     this.updateClock()
-    // 双保险：页面自己也读一遍文件，确保不被 app.ux 的异步延迟坑到
     this.loadLocalConfig()
   },
 
@@ -123,19 +145,53 @@ export default {
     brightness.setKeepScreenOn({keepScreenOn: true})
     this.updateClock()
     this.timeSyncInterval = setInterval(() => this.updateClock(), 1000)
-    // 每次显示页面（如从切换页返回）时强制同步
     this.syncFromGlobal()
+
+    const globalData = this.$app.$def.globalData
+    if (globalData) {
+      this.inspectionEnabled = !!globalData.inspection
+    }
+    const appDef = this.$app.$def
+    appDef.onInspectionChanged = (val) => {
+      this.inspectionEnabled = val
+      if (!val) {
+        this.stopAllInspection()
+      }
+    }
   },
 
   onHide() {
     brightness.setKeepScreenOn({keepScreenOn: false})
     clearInterval(this.timeSyncInterval)
     this.stopTimer()
+    const appDef = this.$app.$def
+    appDef.onInspectionChanged = null
   },
 
-  /**
-   * 核心逻辑：直接读取文件，最优先级
-   */
+  handleGlobalTouchStart() {
+    if (this.timerStatus === "running") {
+      this.stopTimer()
+    }
+  },
+
+  handleBlockTouch() {
+    if (this.timerStatus === "running") {
+      this.stopTimer()
+    }
+  },
+
+  stopAllInspection() {
+    if (this.inspectionTimer) {
+      clearInterval(this.inspectionTimer)
+      this.inspectionTimer = null
+    }
+    if (this.overtimeTimer) {
+      clearInterval(this.overtimeTimer)
+      this.overtimeTimer = null
+    }
+    this.isInspecting = false
+  },
+
   loadLocalConfig() {
     const self = this
     file.readText({
@@ -145,16 +201,17 @@ export default {
           const config = JSON.parse(data.text)
           if (config.currentCubeType) {
             self.currentType = config.currentCubeType
-            // 同步回全局，保持一致
             if (self.$app.$def.globalData) {
               self.$app.$def.globalData.currentCubeType = config.currentCubeType
             }
             self.generateNewScramble()
           }
+          if (typeof config.inspection !== "undefined") {
+            self.inspectionEnabled = config.inspection
+          }
         } catch (e) {}
       },
       fail: function () {
-        // 如果读不到文件，就用全局变量（可能是还没读完，也可能是真的没存过）
         self.syncFromGlobal()
         self.generateNewScramble()
       }
@@ -169,6 +226,12 @@ export default {
         this.generateNewScramble()
       }
     }
+    if (globalData && globalData.bestTimes) {
+      this.bestTimes = globalData.bestTimes
+    }
+    if (globalData && globalData.scoreRecords) {
+      this.scoreRecords = globalData.scoreRecords
+    }
   },
 
   generateNewScramble() {
@@ -180,37 +243,16 @@ export default {
     if (this.isShowPreview) this.preparePreviewData()
   },
 
-  preparePreviewData() {
-    const is2x2 = this.currentType === "2x2"
-    const core = is2x2 ? Cube2Core : Cube3Core
-    const size = is2x2 ? 2 : 3
-    const dotSize = is2x2 ? 28 : 18
-    const dotStep = is2x2 ? 30 : 20
-
-    core.reset()
-    if (this.scrambleString && this.scrambleString !== " ") {
-      this.scrambleString.split(" ").forEach((m) => core.apply(m))
+  handleTouchStart() {
+    if (!this.inspectionEnabled) {
+      this.stopAllInspection()
     }
 
-    const newFaces = []
-    ;["U", "L", "F", "R", "D", "B"].forEach((fName) => {
-      const faceState = core.state[fName]
-      const dots = faceState.map((color, i) => ({
-        color: color,
-        x: (i % size) * dotStep,
-        y: Math.floor(i / size) * dotStep,
-        size: dotSize
-      }))
-      newFaces.push({name: fName, pos: this.layout[fName], data: dots})
-    })
-    this.faces = newFaces
-  },
-
-  handleTouchStart() {
     if (this.isShowPreview) {
       this.hidePreview()
       return
     }
+
     if (this.isShowActions) {
       this.isMenuExiting = true
       setTimeout(() => {
@@ -219,17 +261,29 @@ export default {
       }, 120)
       return
     }
+
     if (this.timerStatus === "running") {
       this.stopTimer()
     } else if (this.timerStatus === "idle") {
       this.timerStatus = "prepping"
+
       this.prepTimeout = setTimeout(() => {
+        if (this.inspectionEnabled) {
+          this.startInspection()
+        }
+
         this.timerStatus = "ready"
       }, 500)
     }
   },
 
   handleTouchEnd() {
+    if (this.isInspecting) {
+      this.stopInspection()
+      this.startTimer()
+      return
+    }
+
     if (this.timerStatus === "ready") {
       this.startTimer()
     } else if (this.timerStatus === "prepping") {
@@ -238,15 +292,61 @@ export default {
     }
   },
 
+  startInspection() {
+    this.isInspecting = true
+    this.inspectionTime = 15
+    this.penalty = 0
+    this.isDNF = false
+    this.penaltyText = ""
+
+    this.inspectionTimer = setInterval(() => {
+      this.inspectionTime--
+
+      this.timeInt = this.inspectionTime
+      this.timeFraction = "00"
+
+      if (this.inspectionTime <= 0) {
+        this.startOvertime()
+      }
+    }, 1000)
+  },
+
+  stopInspection() {
+    clearInterval(this.inspectionTimer)
+    this.inspectionTimer = null
+    this.isInspecting = false
+
+    if (this.overtimeTimer) {
+      clearInterval(this.overtimeTimer)
+      this.overtimeTimer = null
+    }
+  },
+
+  startOvertime() {
+    if (this.overtimeTimer) return
+
+    this.overtime = 0
+
+    this.overtimeTimer = setInterval(() => {
+      this.overtime++
+
+      if (this.overtime >= 1) {
+        this.penalty = 2
+      }
+
+      if (this.overtime >= 8) {
+        this.isDNF = true
+      }
+    }, 1000)
+  },
+
   startTimer() {
     this.timerStatus = "running"
     this.startTime = Date.now()
+
     this.timerInterval = setInterval(() => {
       const ms = Date.now() - this.startTime
-      const formatted = (ms / 1000).toFixed(ms >= 100000 ? 2 : 3)
-      const parts = formatted.split(".")
-      this.timeInt = parts[0]
-      this.timeFraction = parts[1]
+      this.showElapsedTime(ms)
     }, 40)
   },
 
@@ -255,11 +355,101 @@ export default {
       clearInterval(this.timerInterval)
       this.timerInterval = null
     }
+
     if (this.timerStatus === "running") {
+      const elapsed = Date.now() - this.startTime
+
+      if (this.isDNF) {
+        this.timeInt = "DNF"
+        this.timeFraction = ""
+      } else {
+        const resultMs = elapsed + this.penalty * 1000
+        this.showElapsedTime(resultMs)
+
+        if (this.penalty === 2) {
+          this.penaltyText = "+2s"
+        }
+
+        this.recordScore(resultMs)
+        this.updateBestTime(resultMs)
+        this.saveConfigMerge({
+          bestTimes: this.bestTimes,
+          scoreRecords: this.scoreRecords
+        })
+      }
+
       this.timerStatus = "idle"
       this.generateNewScramble()
       this.hasInteracted = false
     }
+  },
+
+  showElapsedTime(ms) {
+    const formatted = (ms / 1000).toFixed(ms >= 100000 ? 2 : 3)
+    const parts = formatted.split(".")
+    this.timeInt = parts[0]
+    this.timeFraction = parts[1]
+  },
+
+  updateBestTime(resultMs) {
+    const cubeType = this.currentType === "2x2" ? "2x2" : "3x3"
+    const currentBest = this.bestTimes && this.bestTimes[cubeType]
+    if (typeof currentBest === "number" && resultMs >= currentBest) return
+
+    const nextBestTimes = Object.assign({"2x2": null, "3x3": null}, this.bestTimes)
+    nextBestTimes[cubeType] = resultMs
+    this.bestTimes = nextBestTimes
+
+    const globalData = this.$app.$def.globalData
+    if (globalData) {
+      globalData.bestTimes = nextBestTimes
+    }
+
+    prompt.showToast({
+      message: "新最佳！",
+      duration: 2000
+    })
+
+  },
+
+  recordScore(resultMs) {
+    const cubeType = this.currentType === "2x2" ? "2x2" : "3x3"
+    const nextRecords = Object.assign({"2x2": [], "3x3": []}, this.scoreRecords)
+    const currentRecords = nextRecords[cubeType] || []
+    nextRecords[cubeType] = currentRecords.concat([resultMs])
+    this.scoreRecords = nextRecords
+
+    const globalData = this.$app.$def.globalData
+    if (globalData) {
+      globalData.scoreRecords = nextRecords
+    }
+
+  },
+
+  saveConfigMerge(newData) {
+    const self = this
+
+    file.readText({
+      uri: this.CONFIG_PATH,
+      success(data) {
+        let oldConfig = {}
+        try {
+          oldConfig = JSON.parse(data.text)
+        } catch (e) {}
+
+        const merged = Object.assign({}, oldConfig, newData)
+        file.writeText({
+          uri: self.CONFIG_PATH,
+          text: JSON.stringify(merged)
+        })
+      },
+      fail() {
+        file.writeText({
+          uri: self.CONFIG_PATH,
+          text: JSON.stringify(newData)
+        })
+      }
+    })
   },
 
   setPress(target, state) {
@@ -302,6 +492,7 @@ export default {
   hidePreview() {
     this.isShowPreview = false
   },
+
   updateClock() {
     const now = new Date()
     this.currentTime = `${now.getHours().toString().padStart(2, "0")}:${now
@@ -309,9 +500,11 @@ export default {
       .toString()
       .padStart(2, "0")}`
   },
+
   back() {
     app.terminate()
   },
+
   more() {
     router.push({uri: "pages/more"})
   }
@@ -330,6 +523,15 @@ export default {
   flex-direction: column;
   align-items: center;
 }
+
+.touch-blocker {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+}
+
 .header {
   width: 100%;
   height: 84px;

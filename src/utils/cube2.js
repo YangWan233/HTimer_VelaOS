@@ -1,6 +1,3 @@
-/**
- * Cube2Core - 二阶魔方逻辑内核
- */
 const Cube2Core = {
     colors: {
         U: "#ffffff", D: "#ffff00",

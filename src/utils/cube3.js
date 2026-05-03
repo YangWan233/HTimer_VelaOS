@@ -1,6 +1,3 @@
-/**
- * CubeCore - 三阶魔方逻辑内核
- */
 const CubeCore = {
     colorMap: {
         U: "#fff", D: "#ff0",
