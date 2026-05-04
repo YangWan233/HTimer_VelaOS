@@ -11,7 +11,7 @@
       style="
         position: absolute;
         left: 26px;
-        top: 144px;
+        top: 215px;
         width: 204px;
         height: 48px;
         font-size: 36px;
@@ -30,7 +30,7 @@ export default {
   private: {
     currentTime: "00:00",
     timeSyncInterval: null,
-    version: "26.2.0"
+    version: "26.2.1"
   },
   onInit() {
     this.syncGlobalTime()

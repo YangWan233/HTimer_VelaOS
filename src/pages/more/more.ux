@@ -31,7 +31,7 @@ export default {
       {title: "个性设置", desc: "个性化设置", uri: "timerSetting"},
       {title: "切换魔方", desc: "更改魔方种类", uri: "kindSetting"},
       {title: "成绩详情", desc: "查看最佳、Ao5、Ao12", uri: "scoreDetail"},
-      {title: "关于应用", desc: "关于 HTimer", uri: "about"}
+      {title: "关于应用", desc: "关于 HTimer", uri: "about"},
     ]
   },
   onInit() {

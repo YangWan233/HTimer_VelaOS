@@ -606,6 +606,46 @@ export default {
     this.isShowPreview = false
   },
 
+  preparePreviewData() {
+    const core = this.currentType === "2x2" ? Cube2Core : Cube3Core
+    core.reset()
+    const moves = this.scrambleString.trim().split(/\s+/)
+    moves.forEach(m => {
+      if (m) core.apply(m)
+    })
+
+    const size = this.currentType === "2x2" ? 2 : 3
+    const cellSize = 60 / size
+    const gap = 1
+
+    const faces = []
+    const layout = this.layout
+
+    for (const faceName of ["U", "L", "F", "R", "D", "B"]) {
+      const faceData = []
+      const state = core.state[faceName]
+      const pos = layout[faceName]
+
+      for (let i = 0; i < state.length; i++) {
+        const row = Math.floor(i / size)
+        const col = i % size
+        faceData.push({
+          x: col * cellSize,
+          y: row * cellSize,
+          size: cellSize - gap,
+          color: state[i]
+        })
+      }
+
+      faces.push({
+        pos: pos,
+        data: faceData
+      })
+    }
+
+    this.faces = faces
+  },
+
   updateClock() {
     const now = new Date()
     this.currentTime = `${now.getHours().toString().padStart(2, "0")}:${now
